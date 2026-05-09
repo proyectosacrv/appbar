@@ -11,7 +11,7 @@ interface CategoryTabsProps {
 
 export function CategoryTabs({ categories, selected, onChange }: CategoryTabsProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+    <div className="flex flex-wrap gap-2 pb-2">
       <button
         onClick={() => onChange(null)}
         className={cn(
