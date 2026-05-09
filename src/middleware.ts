@@ -19,6 +19,40 @@ function detectAppContext(request: NextRequest): "admin" | "customer" {
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
+  const appContext = detectAppContext(request);
+
+  // Subdomain isolation (cheap host-based routing — no DB needed)
+  if (ADMIN_HOST) {
+    if (appContext === "admin") {
+      const isAdminPath =
+        pathname.startsWith("/admin") ||
+        pathname.startsWith("/superadmin") ||
+        pathname === "/login" ||
+        pathname === "/" ||
+        pathname.startsWith("/_next") ||
+        pathname.startsWith("/api");
+      if (!isAdminPath) {
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
+    } else {
+      if (
+        pathname.startsWith("/admin") ||
+        pathname.startsWith("/superadmin")
+      ) {
+        return NextResponse.redirect(new URL("/", request.url));
+      }
+    }
+  }
+
+  // Only do auth work on protected routes. Customer/public routes don't need
+  // session validation, which avoids hitting Supabase on every public page load.
+  const needsAuth =
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/superadmin") ||
+    pathname === "/login";
+
+  if (!needsAuth) return supabaseResponse;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,72 +75,25 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  // Single source of truth for auth: getUser() validates the JWT (HTTP call to
+  // Supabase). Layouts and pages downstream can trust the cookie and use the
+  // cheaper getSession() (no HTTP) since this middleware already gate-kept them.
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
-  const appContext = detectAppContext(request);
-
-  // Subdomain isolation:
-  //   - On admin host: only allow /login, /admin/*, /superadmin/* and assets
-  //   - On customer host: block /admin and /superadmin
-  // Falls back to no-op when ADMIN_HOST is not configured.
-  if (ADMIN_HOST) {
-    if (appContext === "admin") {
-      const isAdminPath =
-        pathname.startsWith("/admin") ||
-        pathname.startsWith("/superadmin") ||
-        pathname === "/login" ||
-        pathname === "/" ||
-        pathname.startsWith("/_next") ||
-        pathname.startsWith("/api");
-      if (!isAdminPath) {
-        return NextResponse.redirect(new URL("/login", request.url));
-      }
-    } else {
-      if (
-        pathname.startsWith("/admin") ||
-        pathname.startsWith("/superadmin")
-      ) {
-        // Customers shouldn't browse the admin on the public host
-        return NextResponse.redirect(new URL("/", request.url));
-      }
-    }
-  }
-
-  // Protect /admin and /superadmin routes
+  // Protect admin/superadmin routes — only check that there IS a user.
+  // Role-based authorization (owner vs staff vs superadmin) is enforced in the
+  // layout via getAdminBarContext(), avoiding a duplicate profile query here.
   if (pathname.startsWith("/admin") || pathname.startsWith("/superadmin")) {
     if (!user) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-
-    // Check role from profiles table
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, bar_id")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    // Superadmin trying to access /admin (and vice versa)
-    if (pathname.startsWith("/superadmin") && profile.role !== "superadmin") {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-
-    if (
-      pathname.startsWith("/admin") &&
-      profile.role !== "owner" &&
-      profile.role !== "staff"
-    ) {
-      return NextResponse.redirect(new URL("/superadmin", request.url));
-    }
   }
 
-  // Redirect authenticated users away from login
+  // If logged in and visiting /login, route to the right dashboard.
+  // This is the only place we need profile data in the middleware, since the
+  // user hasn't picked a destination yet.
   if (pathname === "/login" && user) {
     const { data: profile } = await supabase
       .from("profiles")

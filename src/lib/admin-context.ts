@@ -18,13 +18,18 @@ export interface AdminBarContext {
 
 // Per-request cached lookup of {user, profile, bar} for an admin route.
 // Layout + page share the same cache entry, so only ONE round-trip happens.
+//
+// Uses getSession() (cookie read, no HTTP) instead of getUser() (HTTP call to
+// Supabase Auth) because middleware already validated the JWT with getUser()
+// before the request reached this helper. Saves ~10-30ms per navigation.
 export const getAdminBarContext = cache(
   async (barSlug: string): Promise<AdminBarContext | null> => {
     const supabase = await createClient();
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
     if (!user) return null;
 
     const { data } = await supabase
