@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getAdminBarContext } from "@/lib/admin-context";
 import { HistoryView } from "@/components/admin/HistoryView";
 
 interface HistoryPageProps {
@@ -7,15 +7,8 @@ interface HistoryPageProps {
 
 export default async function HistoryPage({ params }: HistoryPageProps) {
   const { barSlug } = await params;
-  const supabase = await createClient();
-
-  const { data: bar } = await supabase
-    .from("bars")
-    .select("id")
-    .eq("slug", barSlug)
-    .single();
-
-  if (!bar) return null;
+  const ctx = await getAdminBarContext(barSlug);
+  if (!ctx) return null;
 
   return (
     <div className="space-y-4">
@@ -25,7 +18,7 @@ export default async function HistoryPage({ params }: HistoryPageProps) {
           Pedidos cobrados, métricas de tiempo y detalle por mesa
         </p>
       </div>
-      <HistoryView barId={bar.id} />
+      <HistoryView barId={ctx.bar.id} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAdminBarContext } from "@/lib/admin-context";
 import { TablesManager } from "@/components/admin/TablesManager";
 
 interface TablesPageProps {
@@ -7,20 +8,14 @@ interface TablesPageProps {
 
 export default async function TablesPage({ params }: TablesPageProps) {
   const { barSlug } = await params;
+  const ctx = await getAdminBarContext(barSlug);
+  if (!ctx) return null;
+
   const supabase = await createClient();
-
-  const { data: bar } = await supabase
-    .from("bars")
-    .select("id")
-    .eq("slug", barSlug)
-    .single();
-
-  if (!bar) return null;
-
   const { data: tables } = await supabase
     .from("tables")
     .select("*")
-    .eq("bar_id", bar.id)
+    .eq("bar_id", ctx.bar.id)
     .order("table_number");
 
   const appUrl =
@@ -33,7 +28,7 @@ export default async function TablesPage({ params }: TablesPageProps) {
         Genera los QR de cada mesa para que los clientes puedan ver la carta y hacer pedidos.
       </p>
       <TablesManager
-        barId={bar.id}
+        barId={ctx.bar.id}
         barSlug={barSlug}
         tables={tables ?? []}
         appUrl={appUrl}

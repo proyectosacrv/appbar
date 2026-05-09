@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAdminBarContext } from "@/lib/admin-context";
 import { CategoriesManager } from "@/components/admin/CategoriesManager";
 
 interface CategoriesPageProps {
@@ -7,20 +8,14 @@ interface CategoriesPageProps {
 
 export default async function CategoriesPage({ params }: CategoriesPageProps) {
   const { barSlug } = await params;
+  const ctx = await getAdminBarContext(barSlug);
+  if (!ctx) return null;
+
   const supabase = await createClient();
-
-  const { data: bar } = await supabase
-    .from("bars")
-    .select("id")
-    .eq("slug", barSlug)
-    .single();
-
-  if (!bar) return null;
-
   const { data: categories } = await supabase
     .from("categories")
     .select("*")
-    .eq("bar_id", bar.id)
+    .eq("bar_id", ctx.bar.id)
     .order("sort_order")
     .order("name");
 
@@ -28,7 +23,7 @@ export default async function CategoriesPage({ params }: CategoriesPageProps) {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Categorías</h1>
       <CategoriesManager
-        barId={bar.id}
+        barId={ctx.bar.id}
         barSlug={barSlug}
         categories={categories ?? []}
       />

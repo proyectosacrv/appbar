@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getAdminBarContext } from "@/lib/admin-context";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { Toaster } from "@/components/ui/toaster";
 import { BarConfigProvider } from "@/lib/bar-config";
@@ -11,31 +11,16 @@ interface AdminLayoutProps {
 
 export default async function AdminBarLayout({ children, params }: AdminLayoutProps) {
   const { barSlug } = await params;
-  const supabase = await createClient();
+  const ctx = await getAdminBarContext(barSlug);
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, bar_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || (profile.role !== "owner" && profile.role !== "staff")) {
-    redirect("/login");
+  if (!ctx) {
+    // Could be: no user, no profile, wrong role, or bar not found
+    return notFound();
   }
+  // Defensive: if middleware somehow let through an unauth user, kick them out
+  if (!ctx.user.id) redirect("/login");
 
-  const { data: bar } = await supabase
-    .from("bars")
-    .select(
-      "id, name, slug, is_active, logo_url, theme_color, cart_max_quantity, old_order_threshold_min"
-    )
-    .eq("slug", barSlug)
-    .eq("id", profile.bar_id!)
-    .single();
-
-  if (!bar) return notFound();
+  const { bar, profile } = ctx;
 
   if (!bar.is_active) {
     return (
@@ -48,8 +33,8 @@ export default async function AdminBarLayout({ children, params }: AdminLayoutPr
     );
   }
 
-  const themeColor = (bar.theme_color as string | null) ?? null;
-  const logoUrl = (bar.logo_url as string | null) ?? null;
+  const themeColor = bar.theme_color;
+  const logoUrl = bar.logo_url;
   const themeStyle = themeColor
     ? ({ ["--primary" as string]: themeColor } as React.CSSProperties)
     : undefined;
@@ -57,11 +42,10 @@ export default async function AdminBarLayout({ children, params }: AdminLayoutPr
   return (
     <BarConfigProvider
       config={{
-        barId: bar.id as string,
-        barSlug: bar.slug as string,
-        cartMaxQuantity: (bar.cart_max_quantity as number | null) ?? 20,
-        oldOrderThresholdMin:
-          (bar.old_order_threshold_min as number | null) ?? 15,
+        barId: bar.id,
+        barSlug: bar.slug,
+        cartMaxQuantity: bar.cart_max_quantity ?? 20,
+        oldOrderThresholdMin: bar.old_order_threshold_min ?? 15,
       }}
     >
       <div
@@ -69,10 +53,10 @@ export default async function AdminBarLayout({ children, params }: AdminLayoutPr
         style={themeStyle}
       >
         <AdminSidebar
-          barSlug={bar.slug as string}
-          barName={bar.name as string}
+          barSlug={bar.slug}
+          barName={bar.name}
           logoUrl={logoUrl}
-          role={profile.role as "owner" | "staff"}
+          role={profile.role}
         />
         <main className="flex-1 w-full bg-background md:overflow-y-auto">
           <div className="p-4 pt-16 md:p-6">{children}</div>
