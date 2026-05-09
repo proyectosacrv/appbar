@@ -40,7 +40,7 @@ export function MenuGrid({ products, categories, readOnly }: MenuGridProps) {
           )}
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div className="grid gap-3 md:grid-cols-2">
           {filtered.map((product) => (
             <ProductCard key={product.id} product={product} readOnly={readOnly} />
           ))}
